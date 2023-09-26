@@ -1,4 +1,3 @@
-
 /*
  * Copyright (C) 2012-2013 Dmitry Stolyarov
  * Copyright (C) 2012-2013 Timofey Kirillov
@@ -54,6 +53,7 @@ static void enable_code(ngx_http_script_engine_t * e);
 static const ngx_str_t var_rdns_result_name = ngx_string("rdns_hostname");
 static const ngx_str_t var_rdns_result_uninitialized = ngx_string("-");
 static const ngx_str_t var_rdns_result_not_found = ngx_string("not found");
+static const ngx_str_t var_rdns_result_error = ngx_string("error");
 
 
 #if (NGX_PCRE)
@@ -632,9 +632,13 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                 "rdns: reverse dns request handler: failed with error '%s'",
                 ngx_resolver_strerror(rctx->state));
+        struct sockaddr_in * sin = (struct sockaddr_in *) r->connection->sockaddr;
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                      "rdns: reverse dns request handler for ip '%d': failed with error '%s'",
+                      sin->sin_addr.s_addr, ngx_resolver_strerror(rctx->state));
 
         ngx_resolve_addr_done(rctx);
-        var_set(r, loc_cf->rdns_result_index, var_rdns_result_not_found);
+        var_set(r, loc_cf->rdns_result_index, var_rdns_result_error);
         resolver_handler_finalize(r, ctx);
     } else {
         ngx_str_t hostname;
@@ -759,9 +763,12 @@ static void dns_handler(ngx_resolver_ctx_t * rctx) {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                 "rdns: dns request handler: failed with error '%s'",
                 ngx_resolver_strerror(rctx->state));
+        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                      "rdns: dns request handler for ip '%d': failed with error '%s'",
+                      sin->sin_addr.s_addr, ngx_resolver_strerror(rctx->state));
 
         ngx_resolve_name_done(rctx);
-        var_set(r, loc_cf->rdns_result_index, var_rdns_result_not_found);
+        var_set(r, loc_cf->rdns_result_index, var_rdns_result_error);
     } else {
         int found = 0;
         in_addr_t orig_in_addr = sin->sin_addr.s_addr;
@@ -796,6 +803,9 @@ static void dns_handler(ngx_resolver_ctx_t * rctx) {
             ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                     "rdns: dns request handler: resolving inconsistency: '%d' -> '%V' !-> '%d'",
                     sin->sin_addr.s_addr, &rctx->name, sin->sin_addr.s_addr);
+            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
+                          "rdns: dns request handler: resolving inconsistency: '%d' -> '%V' !-> '%d'",
+                          sin->sin_addr.s_addr, &rctx->name, sin->sin_addr.s_addr);
 
             ngx_resolve_name_done(rctx);
             var_set(r, loc_cf->rdns_result_index, var_rdns_result_not_found);
